@@ -39,7 +39,7 @@ jobs:
 
       # Fetch latest files from Overleaf
       - name: Fetch from Overleaf
-        uses: subhamx/overleaf_sync_with_git@v1
+        uses: karelmachacek1-jpg/komplexni-cisla-paper/tags
         with:
           OVERLEAF_PROJECT_ID: ${{ secrets.OVERLEAF_PROJECT_ID }}
           OVERLEAF_COOKIE: ${{ secrets.OVERLEAF_COOKIE }}
