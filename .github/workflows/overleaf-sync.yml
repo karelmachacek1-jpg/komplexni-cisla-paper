@@ -1,0 +1,65 @@
+name: Overleaf Sync with Git
+ 
+on:
+  schedule:
+    # Runs every 6 hours — adjust as needed
+    # Cron format: minute hour day month weekday
+    - cron: "0 */6 * * *"
+  # Allows you to manually trigger the sync
+  workflow_dispatch:
+ 
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Clean up old artifacts
+      - name: Delete Old Artifacts
+        uses: actions/github-script@v6
+        id: artifact
+        with:
+          script: |
+            const res = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            })
+            res.data.artifacts.forEach(({ id }) => {
+              github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: id,
+              })
+            })
+ 
+      # Fetch latest files from Overleaf
+      - name: Fetch from Overleaf
+        uses: subhamx/overleaf_sync_with_git@master
+        with:
+          OVERLEAF_PROJECT_ID: ${{ secrets.OVERLEAF_PROJECT_ID }}
+          OVERLEAF_COOKIE: ${{ secrets.OVERLEAF_COOKIE }}
+ 
+      # Save as artifact (optional backup)
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: overleaf-project
+          path: ./artifacts/
+ 
+      # Commit to the repository
+      - uses: actions/checkout@v2
+        with:
+          path: repo/
+ 
+      - name: Sync files and commit
+        run: |
+          cd repo/
+          mkdir -p overleaf_remote_src
+          cp -r ../artifacts/* ./overleaf_remote_src
+          git config user.name "Overleaf Sync Bot"
+          git config user.email "overleaf-bot@github.com"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-sync from Overleaf $(date +'%Y-%m-%d %H:%M')"
+            git push
+          fi
