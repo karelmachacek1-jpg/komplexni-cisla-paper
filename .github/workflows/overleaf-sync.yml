@@ -1,62 +1,70 @@
 name: Overleaf Sync with Git
- 
+
 on:
   schedule:
-    # Runs every 6 hours — adjust as needed
-    # Cron format: minute hour day month weekday
     - cron: "0 */6 * * *"
-  # Allows you to manually trigger the sync
   workflow_dispatch:
- 
+
+permissions:
+  contents: write
+
 jobs:
-  build:
+  sync:
     runs-on: ubuntu-latest
+
     steps:
-      # Clean up old artifacts
+      # Checkout repo FIRST (needed for pushing later)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      # Clean up old artifacts (safer version)
       - name: Delete Old Artifacts
         uses: actions/github-script@v6
-        id: artifact
         with:
           script: |
-            const res = await github.rest.actions.listArtifactsForRepo({
+            const artifacts = await github.rest.actions.listArtifactsForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-            })
-            res.data.artifacts.forEach(({ id }) => {
-              github.rest.actions.deleteArtifact({
+            });
+
+            for (const artifact of artifacts.data.artifacts) {
+              await github.rest.actions.deleteArtifact({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                artifact_id: id,
-              })
-            })
- 
+                artifact_id: artifact.id,
+              });
+            }
+
       # Fetch latest files from Overleaf
       - name: Fetch from Overleaf
-        uses: subhamx/overleaf_sync_with_git@master
+        uses: subhamx/overleaf_sync_with_git@v1
         with:
           OVERLEAF_PROJECT_ID: ${{ secrets.OVERLEAF_PROJECT_ID }}
           OVERLEAF_COOKIE: ${{ secrets.OVERLEAF_COOKIE }}
- 
-      # Save as artifact (optional backup)
+
+      # Upload artifact (optional)
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: overleaf-project
           path: ./artifacts/
- 
-      # Commit to the repository
-      - uses: actions/checkout@v2
-        with:
-          path: repo/
- 
-      - name: Sync files and commit
+
+      # Sync files into repo
+      - name: Copy files into repo
         run: |
-          cd repo/
           mkdir -p overleaf_remote_src
-          cp -r ../artifacts/* ./overleaf_remote_src
+          cp -r artifacts/* overleaf_remote_src/ || true
+
+      # Commit & push if changes exist
+      - name: Commit and push changes
+        run: |
           git config user.name "Overleaf Sync Bot"
           git config user.email "overleaf-bot@github.com"
+
           git add .
+
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
